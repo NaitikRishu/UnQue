@@ -14,11 +14,12 @@ import {
 import io from 'socket.io-client';
 
 // Default backend URL:
-// - iOS Simulator: http://localhost:5000
-// - Android Emulator: http://10.0.2.2:5000
+// - iOS Simulator: http://localhost:4000
+// - Android Emulator: http://10.0.2.2:4000
 // - Physical device / ngrok: your LAN IP or https://your-tunnel.ngrok-free.app
 const DEFAULT_SERVER_URL =
-  Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000';
+  Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
+
 
 export default function App() {
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
