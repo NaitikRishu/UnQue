@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,9 +10,59 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 
+// In-memory store for received leads (PoC)
+const leads = [];
+
+// Helper: Fetch lead details from Meta Graph API using leadgen_id
+async function fetchLeadDetails(leadgenId) {
+  const token = process.env.META_PAGE_ACCESS_TOKEN;
+
+  if (!token) {
+    console.warn('[Graph API] META_PAGE_ACCESS_TOKEN not set. Creating mock lead for testing.');
+    return {
+      id: leadgenId,
+      name: 'Test Prospect',
+      email: `lead_${leadgenId.slice(-4)}@example.com`,
+      phone: '+1 (555) 019-2834',
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const url = `https://graph.facebook.com/v19.0/${leadgenId}?access_token=${token}`;
+    const response = await axios.get(url);
+    const data = response.data;
+
+    // Normalize field_data array into a key-value object
+    const fields = {};
+    if (Array.isArray(data.field_data)) {
+      data.field_data.forEach((field) => {
+        fields[field.name] = field.values?.[0] || '';
+      });
+    }
+
+    return {
+      id: data.id || leadgenId,
+      name: fields.full_name || fields.name || 'Anonymous Lead',
+      email: fields.email || 'No email provided',
+      phone: fields.phone_number || fields.phone || 'No phone provided',
+      createdAt: data.created_time || new Date().toISOString(),
+      raw: data,
+    };
+  } catch (error) {
+    console.error(`[Graph API] Error fetching lead ${leadgenId}:`, error.response?.data || error.message);
+    throw error;
+  }
+}
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.send({ status: 'ok', message: 'Meta Lead Ads Backend Running' });
+});
+
+// GET /leads - Retrieve all received leads
+app.get('/leads', (req, res) => {
+  res.json({ success: true, count: leads.length, leads });
 });
 
 // Meta Webhook Verification (GET /webhook)
@@ -34,21 +85,31 @@ app.get('/webhook', (req, res) => {
 
 // Meta Webhook Event Handler (POST /webhook)
 // Meta sends lead notifications when a user submits a Lead Ad form
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
-    body.entry?.forEach((entry) => {
-      entry.changes?.forEach((change) => {
-        if (change.field === 'leadgen') {
-          const { leadgen_id, form_id, page_id, created_time } = change.value;
-          console.log(`[Webhook] Received new lead notification: leadgen_id=${leadgen_id}, form_id=${form_id}, page_id=${page_id}`);
-        }
-      });
-    });
+    // Respond with 200 OK immediately so Meta doesn't retry or timeout
+    res.status(200).send('EVENT_RECEIVED');
 
-    // Always respond with 200 OK immediately so Meta doesn't retry
-    return res.status(200).send('EVENT_RECEIVED');
+    // Process lead events asynchronously
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        if (change.field === 'leadgen') {
+          const { leadgen_id, form_id, page_id } = change.value;
+          console.log(`[Webhook] Processing lead: leadgen_id=${leadgen_id}, form_id=${form_id}, page_id=${page_id}`);
+
+          try {
+            const lead = await fetchLeadDetails(leadgen_id);
+            leads.unshift(lead);
+            console.log('[Lead Saved]', lead);
+          } catch (err) {
+            console.error('[Webhook] Failed to process lead:', err.message);
+          }
+        }
+      }
+    }
+    return;
   }
 
   return res.sendStatus(404);
@@ -58,4 +119,5 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Backend server running on port ${PORT}`);
 });
+
 
