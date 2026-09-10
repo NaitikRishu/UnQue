@@ -3,15 +3,36 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const axios = require('axios');
+const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+
+// Initialize Socket.io with CORS enabled for mobile/web clients
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
 
 app.use(cors());
 app.use(express.json());
 
 // In-memory store for received leads (PoC)
 const leads = [];
+
+// Socket.io connection handling
+io.on('connection', (socket) => {
+  console.log(`[Socket] Client connected: ${socket.id}`);
+
+  // Send existing leads to newly connected client
+  socket.emit('initial_leads', leads);
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket] Client disconnected: ${socket.id}`);
+  });
+});
 
 // Helper: Fetch lead details from Meta Graph API using leadgen_id
 async function fetchLeadDetails(leadgenId) {
@@ -65,6 +86,23 @@ app.get('/leads', (req, res) => {
   res.json({ success: true, count: leads.length, leads });
 });
 
+// POST /test-lead - Helper endpoint to simulate a lead directly
+app.post('/test-lead', (req, res) => {
+  const testLead = {
+    id: `test_${Date.now()}`,
+    name: req.body.name || 'John Doe (Test)',
+    email: req.body.email || 'johndoe.test@example.com',
+    phone: req.body.phone || '+1 (555) 012-3456',
+    createdAt: new Date().toISOString(),
+  };
+
+  leads.unshift(testLead);
+  io.emit('new_lead', testLead);
+  console.log('[Test Lead] Created and broadcasted:', testLead);
+
+  res.json({ success: true, lead: testLead });
+});
+
 // Meta Webhook Verification (GET /webhook)
 // Meta sends hub.mode, hub.verify_token, and hub.challenge
 app.get('/webhook', (req, res) => {
@@ -102,7 +140,10 @@ app.post('/webhook', async (req, res) => {
           try {
             const lead = await fetchLeadDetails(leadgen_id);
             leads.unshift(lead);
-            console.log('[Lead Saved]', lead);
+
+            // Broadcast new lead to all connected mobile clients in real-time
+            io.emit('new_lead', lead);
+            console.log('[Socket] Broadcasted new_lead event:', lead.name);
           } catch (err) {
             console.error('[Webhook] Failed to process lead:', err.message);
           }
@@ -119,5 +160,6 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Backend server running on port ${PORT}`);
 });
+
 
 
