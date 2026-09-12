@@ -13,13 +13,8 @@ import {
 } from 'react-native';
 import io from 'socket.io-client';
 
-// Default backend URL:
-// - iOS Simulator: http://localhost:4000
-// - Android Emulator: http://10.0.2.2:4000
-// - Physical device / ngrok: your LAN IP or https://your-tunnel.ngrok-free.app
 const DEFAULT_SERVER_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
-
 
 export default function App() {
   const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
@@ -30,7 +25,6 @@ export default function App() {
   const [tempUrl, setTempUrl] = useState(DEFAULT_SERVER_URL);
 
   useEffect(() => {
-    // Initialize Socket.io connection
     const newSocket = io(serverUrl, {
       transports: ['websocket'],
       reconnectionAttempts: 10,
@@ -38,30 +32,27 @@ export default function App() {
     });
 
     newSocket.on('connect', () => {
-      console.log('Connected to backend socket server:', serverUrl);
+      console.log('Connected to backend:', serverUrl);
       setIsConnected(true);
     });
 
     newSocket.on('disconnect', () => {
-      console.log('Disconnected from backend socket server');
+      console.log('Disconnected from backend');
       setIsConnected(false);
     });
 
     newSocket.on('connect_error', (err) => {
-      console.warn('Socket connection error:', err.message);
+      console.warn('Socket error:', err.message);
       setIsConnected(false);
     });
 
-    // Receive initial leads list on first connection
     newSocket.on('initial_leads', (initialLeads) => {
       if (Array.isArray(initialLeads)) {
         setLeads(initialLeads);
       }
     });
 
-    // Real-time event: listen for newly submitted leads
     newSocket.on('new_lead', (newLead) => {
-      console.log('Received new lead in real-time:', newLead);
       setLeads((prevLeads) => [newLead, ...prevLeads.filter((l) => l.id !== newLead.id)]);
     });
 
@@ -97,7 +88,6 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Live Leads</Text>
@@ -121,7 +111,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Sub-bar: Count & Actions */}
       <View style={styles.subBar}>
         <Text style={styles.countText}>
           {leads.length} {leads.length === 1 ? 'Lead' : 'Leads'} Received
@@ -133,7 +122,6 @@ export default function App() {
         )}
       </View>
 
-      {/* Leads List or Empty State */}
       {leads.length === 0 ? (
         <View style={styles.emptyContainer}>
           <View style={styles.pulseCircle}>
@@ -193,19 +181,18 @@ export default function App() {
         />
       )}
 
-      {/* Server URL Config Modal */}
       <Modal visible={showSettings} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Backend Server URL</Text>
             <Text style={styles.modalSubtitle}>
-              Enter your backend address (localhost, LAN IP, or ngrok URL)
+              Enter backend address (localhost, LAN IP, or ngrok URL)
             </Text>
             <TextInput
               style={styles.input}
               value={tempUrl}
               onChangeText={setTempUrl}
-              placeholder="http://localhost:5000"
+              placeholder="http://localhost:4000"
               placeholderTextColor="#64748b"
               autoCapitalize="none"
               autoCorrect={false}
